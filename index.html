@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Virtual Classroom - Three.js Assignment</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #playButton, #resetButton {
+            position: absolute;
+            left: 10px;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-family: 'Arial', sans-serif;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            background: #2A2A2A;
+            transition: background 0.3s;
+        }
+        #playButton { top: 60px; }
+        #resetButton { top: 100px; }
+        #playButton:hover, #resetButton:hover { background: #1976D2; }
+        #playButton:active, #resetButton:active { background: #0D47A1; }
+    </style>
+</head>
+<body>
+    <!-- Name: Wang Guanheng  Student ID: 124100726 -->
+    <button id="playButton">Play Audio</button>
+    <button id="resetButton">Reset View</button>
+    <script src="libs/three.min.js"></script>
+    <script src="libs/GLTFLoader.js"></script>
+    <script src="libs/OrbitControls.js"></script>
+    <script src="libs/dat.gui.min.js"></script>
+    <script src="libs/stats.min.js"></script>
+    <script src="libs/VRButton.js"></script> 
+    <script src="libs/XRControllerModelFactory.js"></script>
+    
+    <!-- Make sure Cannon.js is loaded correctly -->ing of Cannon.js -->
+    <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+
+    <script>
+        // Initialize scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+        console.log("Renderer initialized");
+
+        // Enable WebXR in the renderer
+        renderer.xr.enabled = true;
+
+        // Add the VR button to the document
+        document.body.appendChild(VRButton.createButton(renderer)); // Using non-modular VRButton
+
+        // Add OrbitControls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 1;
+        controls.maxDistance = 100;
+        controls.maxPolarAngle = Math.PI;
+        console.log("OrbitControls initialized");
+
+        // Add performance monitor
+        const stats = new Stats();
+        document.body.appendChild(stats.dom);
+        console.log("Stats.js initialized");
+
+        // Set scene background to black
+        scene.background = new THREE.Color(0x000000);
+        console.log("Scene background set to black");
+
+        // Load textures
+        const textureLoader = new THREE.TextureLoader();
+        let floorTexture;
+        try {
+            floorTexture = textureLoader.load('assets/textures/wood_floor.jpg');
+            floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping;
+            floorTexture.repeat.set(1, 1);
+            floorTexture.offset.set(0, 0);
+            console.log("Floor texture loaded successfully");
+        } catch (error) {
+            console.error("Failed to load floor texture:", error);
+            floorTexture = null;
+        }
+
+        let wallTexture;
+        try {
+            wallTexture = textureLoader.load('assets/textures/wall.jpg');
+            wallTexture.wrapS = wallTexture.wrapT = THREE.RepeatWrapping;
+            wallTexture.repeat.set(4, 4);
+            wallTexture.offset.set(0, 0);
+            console.log("Wall texture loaded successfully");
+        } catch (error) {
+            console.error("Failed to load wall texture:", error);
+            wallTexture = null;
+        }
+
+        let deskTexture;
+        try {
+            deskTexture = textureLoader.load('assets/textures/wood_desk.jpg');
+            deskTexture.wrapS = deskTexture.wrapT = THREE.RepeatWrapping;
+            deskTexture.repeat.set(1, 1);
+            deskTexture.offset.set(0, 0);
+            console.log("Desk texture loaded successfully");
+        } catch (error) {
+            console.error("Failed to load desk texture:", error);
+            deskTexture = null;
+        }
+
+        // Define classroom dimensions
+        const roomWidth = 20;
+        const roomDepth = 22;
+        const roomHeight = 8;
+
+        // Add classroom floor
+        const floorGeometry = new THREE.PlaneGeometry(roomWidth, roomDepth);
+        const floorMaterial = new THREE.MeshStandardMaterial(floorTexture ? { map: floorTexture } : { color: 0x3C2F2F });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+        console.log("Classroom floor added");
+
+        // Add walls
+        const wallMaterial = new THREE.MeshStandardMaterial(wallTexture ? { map: wallTexture, side: THREE.DoubleSide } : { color: 0xD3D3D3, side: THREE.DoubleSide });
+        wallMaterial.roughness = 0.9;
+        wallMaterial.metalness = 0;
+
+        // Back wall
+        const backWallGeometry = new THREE.BoxGeometry(roomWidth, roomHeight, 0.2);
+        const backWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+        backWall.position.set(0, roomHeight / 2, -roomDepth / 2);
+        backWall.receiveShadow = true;
+        backWall.castShadow = false;
+        scene.add(backWall);
+        console.log("Back wall added");
+
+        // Right wall
+        const rightWallGeometry = new THREE.BoxGeometry(0.2, roomHeight, roomDepth);
+        const rightWall = new THREE.Mesh(rightWallGeometry, wallMaterial);
+        rightWall.position.set(roomWidth / 2, roomHeight / 2, 0);
+        rightWall.receiveShadow = true;
+        rightWall.castShadow = false;
+        scene.add(rightWall);
+        console.log("Right wall added");
+
+        // Front wall
+        const frontWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+        frontWall.position.set(0, roomHeight / 2, roomDepth / 2);
+        frontWall.receiveShadow = true;
+        frontWall.castShadow = false;
+        scene.add(frontWall);
+        console.log("Front wall added");
+
+        // Left wall - Add floor-to-ceiling window
+        const windowGroup = new THREE.Group();
+
+        // Glass material
+        const glassMaterial = new THREE.MeshStandardMaterial({
+            color: 0xD1E8E2,
+            transparent: true,
+            opacity: 0.8,
+            metalness: 0.3,
+            roughness: 0.05,
+            emissive: 0x111111,
+            emissiveIntensity: 0.1,
+            depthWrite: false
+        });
+
+        // Metal frame material
+        const frameMaterial = new THREE.MeshStandardMaterial({
+            color: 0x2A2A2A,
+            metalness: 0.8,
+            roughness: 0.2
+        });
+
+        // Window dimensions
+        const windowHeight = roomHeight;
+        const windowWidth = roomDepth;
+        const windowPaneWidth = windowWidth / 5;
+        const glassThickness = 0.05;
+
+        // Add glass panes (5 panes)
+        for (let i = 0; i < 5; i++) {
+            const paneGeometry = new THREE.BoxGeometry(glassThickness, windowHeight, windowPaneWidth - 0.2);
+            const pane = new THREE.Mesh(paneGeometry, glassMaterial);
+            pane.position.set(0, roomHeight / 2, -windowWidth / 2 + i * windowPaneWidth + windowPaneWidth / 2);
+            pane.castShadow = false;
+            pane.receiveShadow = true;
+            windowGroup.add(pane);
+        }
+
+        // Uniform frame width
+        const frameWidth = 0.1;
+
+        // Add top and bottom frames
+        const topFrameGeometry = new THREE.BoxGeometry(frameWidth, frameWidth, windowWidth - 2 * frameWidth);
+        const topFrame = new THREE.Mesh(topFrameGeometry, frameMaterial);
+        topFrame.position.set(0, roomHeight - frameWidth, 0);
+        windowGroup.add(topFrame);
+
+        const bottomFrame = new THREE.Mesh(topFrameGeometry, frameMaterial);
+        bottomFrame.position.set(0, frameWidth, 0);
+        windowGroup.add(bottomFrame);
+
+        // Add 4 vertical frames
+        const verticalFrameGeometry = new THREE.BoxGeometry(frameWidth, windowHeight - 2 * frameWidth, frameWidth);
+        for (let i = 0; i < 4; i++) {
+            const verticalFrame = new THREE.Mesh(verticalFrameGeometry, frameMaterial);
+            verticalFrame.position.set(0, roomHeight / 2, -windowWidth / 2 + (i + 1) * windowPaneWidth);
+            windowGroup.add(verticalFrame);
+        }
+
+        // Add side frames
+        const sideFrameGeometry = new THREE.BoxGeometry(frameWidth, windowHeight - 2 * frameWidth, frameWidth);
+        const leftSideFrame = new THREE.Mesh(sideFrameGeometry, frameMaterial);
+        leftSideFrame.position.set(glassThickness / 2, roomHeight / 2, -windowWidth / 2 + frameWidth);
+        windowGroup.add(leftSideFrame);
+        const rightSideFrame = new THREE.Mesh(sideFrameGeometry, frameMaterial);
+        rightSideFrame.position.set(glassThickness / 2, roomHeight / 2, windowWidth / 2 - frameWidth);
+        windowGroup.add(rightSideFrame);
+
+        windowGroup.position.set(-roomWidth / 2 + frameWidth / 2, 0, 0);
+        scene.add(windowGroup);
+        console.log("Floor-to-ceiling window added on the left wall");
+
+        // Add ceiling
+        const ceilingGeometry = new THREE.PlaneGeometry(roomWidth, roomDepth);
+        const ceilingMaterial = new THREE.MeshStandardMaterial(wallTexture ? { map: wallTexture } : { color: 0xD3D3D3 });
+        const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
+        ceiling.rotation.x = Math.PI / 2;
+        ceiling.position.set(0, roomHeight, 0);
+        ceiling.receiveShadow = true;
+        scene.add(ceiling);
+        console.log("Ceiling added");
+
+        // Add blackboard
+        const blackboardGeometry = new THREE.PlaneGeometry(6, 3);
+        const blackboardMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+        const blackboard = new THREE.Mesh(blackboardGeometry, blackboardMaterial);
+        blackboard.position.set(0, 3.5, -roomDepth / 2 + 0.2);
+        blackboard.receiveShadow = true;
+        scene.add(blackboard);
+        console.log("Blackboard added");
+
+        // Add blackboard frame
+        const blackboardFrameMaterial = new THREE.MeshStandardMaterial({ color: 0xC0C0C0, metalness: 0.8, roughness: 0.2 });
+        const blackboardFrameGeometry = new THREE.BoxGeometry(6.2, 0.2, 0.2);
+        const topBlackboardFrame = new THREE.Mesh(blackboardFrameGeometry, blackboardFrameMaterial);
+        topBlackboardFrame.position.set(0, 5, -roomDepth / 2 + 0.2);
+        scene.add(topBlackboardFrame);
+        const bottomBlackboardFrame = new THREE.Mesh(blackboardFrameGeometry, blackboardFrameMaterial);
+        bottomBlackboardFrame.position.set(0, 2, -roomDepth / 2 + 0.2);
+        scene.add(bottomBlackboardFrame);
+        const sideBlackboardFrameGeometry = new THREE.BoxGeometry(0.2, 3.2, 0.2);
+        const leftBlackboardFrame = new THREE.Mesh(sideBlackboardFrameGeometry, blackboardFrameMaterial);
+        leftBlackboardFrame.position.set(-3.1, 3.5, -roomDepth / 2 + 0.2);
+        scene.add(leftBlackboardFrame);
+        const rightBlackboardFrame = new THREE.Mesh(sideBlackboardFrameGeometry, blackboardFrameMaterial);
+        rightBlackboardFrame.position.set(3.1, 3.5, -roomDepth / 2 + 0.2);
+        scene.add(rightBlackboardFrame);
+        console.log("Blackboard frame added");
+
+        // Add realistic door on right wall
+        const doorGroup = new THREE.Group();
+        const doorGeometry = new THREE.BoxGeometry(0.1, 4, 2);
+        const doorMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+        const door = new THREE.Mesh(doorGeometry, doorMaterial);
+        door.position.set(0, 2, 0);
+        door.castShadow = true;
+        door.receiveShadow = true;
+        doorGroup.add(door);
+
+        const doorFrameMaterial = new THREE.MeshStandardMaterial({ color: 0xC0C0C0, metalness: 0.8, roughness: 0.2 });
+        const doorFrameTopGeometry = new THREE.BoxGeometry(0.2, 0.2, 2.2);
+        const doorFrameTop = new THREE.Mesh(doorFrameTopGeometry, doorFrameMaterial);
+        doorFrameTop.position.set(0, 4.1, 0);
+        doorGroup.add(doorFrameTop);
+        const doorFrameSideGeometry = new THREE.BoxGeometry(0.2, 4.2, 0.2);
+        const doorFrameLeft = new THREE.Mesh(doorFrameSideGeometry, doorFrameMaterial);
+        doorFrameLeft.position.set(0, 2, -1.1);
+        doorGroup.add(doorFrameLeft);
+        const doorFrameRight = new THREE.Mesh(doorFrameSideGeometry, doorFrameMaterial);
+        doorFrameRight.position.set(0, 2, 1.1);
+        doorGroup.add(doorFrameRight);
+
+        const handleGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 32);
+        const handleMaterial = new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.9, roughness: 0.1 });
+        const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+        handle.rotation.z = Math.PI / 2;
+        handle.position.set(0.06, 1.5, 0.8);
+        doorGroup.add(handle);
+
+        doorGroup.position.set(8, 0, -roomDepth / 2 + 0.1);
+        doorGroup.rotation.y = -Math.PI / 2;
+        scene.add(doorGroup);
+        console.log("Realistic door added");
+
+        // Add luxury desks and chairs (4 rows, 6 chairs per row)
+        const deskMaterial = new THREE.MeshStandardMaterial(deskTexture ? { map: deskTexture, roughness: 0.5, metalness: 0 } : { color: 0x4A2F27, roughness: 0.5, metalness: 0 });
+        const metalMaterial = new THREE.MeshStandardMaterial({ color: 0xA9A9A9, metalness: 0.9, roughness: 0.3 });
+        const cushionMaterial = new THREE.MeshStandardMaterial({ color: 0x2F4F4F, roughness: 0.7, metalness: 0 });
+        for (let row = 0; row < 4; row++) {
+            const baseZ = -2 + row * 3;
+
+            const deskGroup = new THREE.Group();
+            const deskWidth = 12;
+            const deskTopGeometry = new THREE.BoxGeometry(deskWidth, 0.1, 1);
+            const deskTop = new THREE.Mesh(deskTopGeometry, deskMaterial);
+            deskTop.position.set(0, 0.75, 0);
+            deskTop.castShadow = true;
+            deskTop.receiveShadow = true;
+            deskGroup.add(deskTop);
+            const legGeometry = new THREE.BoxGeometry(0.1, 0.7, 0.1);
+            const leg1 = new THREE.Mesh(legGeometry, metalMaterial);
+            leg1.position.set(-deskWidth / 2 + 0.2, 0.35, -0.4);
+            leg1.castShadow = true;
+            leg1.receiveShadow = true;
+            deskGroup.add(leg1);
+            const leg2 = new THREE.Mesh(legGeometry, metalMaterial);
+            leg2.position.set(-deskWidth / 2 + 0.2, 0.35, 0.4);
+            leg2.castShadow = true;
+            leg2.receiveShadow = true;
+            deskGroup.add(leg2);
+            const leg3 = new THREE.Mesh(legGeometry, metalMaterial);
+            leg3.position.set(0, 0.35, -0.4);
+            leg3.castShadow = true;
+            leg3.receiveShadow = true;
+            deskGroup.add(leg3);
+            const leg4 = new THREE.Mesh(legGeometry, metalMaterial);
+            leg4.position.set(0, 0.35, 0.4);
+            leg4.castShadow = true;
+            leg4.receiveShadow = true;
+            deskGroup.add(leg4);
+            const leg5 = new THREE.Mesh(legGeometry, metalMaterial);
+            leg5.position.set(deskWidth / 2 - 0.2, 0.35, -0.4);
+            leg5.castShadow = true;
+            leg5.receiveShadow = true;
+            deskGroup.add(leg5);
+            const leg6 = new THREE.Mesh(legGeometry, metalMaterial);
+            leg6.position.set(deskWidth / 2 - 0.2, 0.35, 0.4);
+            leg6.castShadow = true;
+            leg6.receiveShadow = true;
+            deskGroup.add(leg6);
+
+            const chairSpacing = deskWidth / 6;
+            for (let chairIdx = 0; chairIdx < 6; chairIdx++) {
+                const chairGroup = new THREE.Group();
+                const seatGeometry = new THREE.BoxGeometry(0.4, 0.1, 0.4);
+                const seat = new THREE.Mesh(seatGeometry, cushionMaterial);
+                seat.position.set(0, 0.45, 0);
+                seat.castShadow = true;
+                seat.receiveShadow = true;
+                chairGroup.add(seat);
+                const backrestGeometry = new THREE.BoxGeometry(0.4, 0.5, 0.05);
+                const backrest = new THREE.Mesh(backrestGeometry, cushionMaterial);
+                backrest.position.set(0, 0.65, 0.15);
+                backrest.castShadow = true;
+                backrest.receiveShadow = true;
+                chairGroup.add(backrest);
+                const chairLegGeometry = new THREE.BoxGeometry(0.05, 0.4, 0.05);
+                const chairLeg1 = new THREE.Mesh(chairLegGeometry, metalMaterial);
+                chairLeg1.position.set(-0.15, 0.2, -0.15);
+                chairLeg1.castShadow = true;
+                chairLeg1.receiveShadow = true;
+                chairGroup.add(chairLeg1);
+                const chairLeg2 = new THREE.Mesh(chairLegGeometry, metalMaterial);
+                chairLeg2.position.set(-0.15, 0.2, 0.15);
+                chairLeg2.castShadow = true;
+                chairLeg2.receiveShadow = true;
+                chairGroup.add(chairLeg2);
+                const chairLeg3 = new THREE.Mesh(chairLegGeometry, metalMaterial);
+                chairLeg3.position.set(0.15, 0.2, -0.15);
+                chairLeg3.castShadow = true;
+                chairLeg3.receiveShadow = true;
+                chairGroup.add(chairLeg3);
+                const chairLeg4 = new THREE.Mesh(chairLegGeometry, metalMaterial);
+                chairLeg4.position.set(0.15, 0.2, 0.15);
+                chairLeg4.castShadow = true;
+                chairLeg4.receiveShadow = true;
+                chairGroup.add(chairLeg4);
+                chairGroup.position.set(-deskWidth / 2 + chairSpacing / 2 + chairIdx * chairSpacing, 0, 1.5);
+                deskGroup.add(chairGroup);
+            }
+
+            deskGroup.position.set(0, 0, baseZ);
+            scene.add(deskGroup);
+        }
+        console.log("Luxury long desks and chairs added");
+
+        // Add modern podium
+        const podiumGroup = new THREE.Group();
+        const podiumFrameMaterial = new THREE.MeshStandardMaterial({ color: 0xA9A9A9, metalness: 0.9, roughness: 0.3 });
+        const podiumFrameGeometry = new THREE.BoxGeometry(2, 0.05, 1.5);
+        const podiumFrameBottom = new THREE.Mesh(podiumFrameGeometry, podiumFrameMaterial);
+        podiumFrameBottom.position.set(0, 0.025, 0);
+        podiumFrameBottom.castShadow = true;
+        podiumFrameBottom.receiveShadow = true;
+        podiumGroup.add(podiumFrameBottom);
+
+        const podiumFrameTop = new THREE.Mesh(podiumFrameGeometry, podiumFrameMaterial);
+        podiumFrameTop.position.set(0, 0.775, 0);
+        podiumFrameTop.castShadow = true;
+        podiumFrameTop.receiveShadow = true;
+        podiumGroup.add(podiumFrameTop);
+
+        const podiumLegGeometry = new THREE.BoxGeometry(0.05, 0.75, 0.05);
+        const podiumLeg1 = new THREE.Mesh(podiumLegGeometry, podiumFrameMaterial);
+        podiumLeg1.position.set(-0.95, 0.375, -0.7);
+        podiumLeg1.castShadow = true;
+        podiumLeg1.receiveShadow = true;
+        podiumGroup.add(podiumLeg1);
+        const podiumLeg2 = new THREE.Mesh(podiumLegGeometry, podiumFrameMaterial);
+        podiumLeg2.position.set(-0.95, 0.375, 0.7);
+        podiumLeg2.castShadow = true;
+        podiumLeg2.receiveShadow = true;
+        podiumGroup.add(podiumLeg2);
+        const podiumLeg3 = new THREE.Mesh(podiumLegGeometry, podiumFrameMaterial);
+        podiumLeg3.position.set(0.95, 0.375, -0.7);
+        podiumLeg3.castShadow = true;
+        podiumLeg3.receiveShadow = true;
+        podiumGroup.add(podiumLeg3);
+        const podiumLeg4 = new THREE.Mesh(podiumLegGeometry, podiumFrameMaterial);
+        podiumLeg4.position.set(0.95, 0.375, 0.7);
+        podiumLeg4.castShadow = true;
+        podiumLeg4.receiveShadow = true;
+        podiumGroup.add(podiumLeg4);
+
+        const podiumGlassMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xE0FFFF, 
+            transparent: true, 
+            opacity: 0.3, 
+            metalness: 0.9, 
+            roughness: 0.1 
+        });
+        const podiumSideGeometry = new THREE.BoxGeometry(0.05, 0.7, 1.5);
+        const podiumSide1 = new THREE.Mesh(podiumSideGeometry, podiumGlassMaterial);
+        podiumSide1.position.set(-0.975, 0.375, 0);
+        podiumSide1.castShadow = true;
+        podiumSide1.receiveShadow = true;
+        podiumGroup.add(podiumSide1);
+        const podiumSide2 = new THREE.Mesh(podiumSideGeometry, podiumGlassMaterial);
+        podiumSide2.position.set(0.975, 0.375, 0);
+        podiumSide2.castShadow = true;
+        podiumSide2.receiveShadow = true;
+        podiumGroup.add(podiumSide2);
+
+        const podiumTopGeometry = new THREE.BoxGeometry(2, 0.05, 1);
+        const podiumTop = new THREE.Mesh(podiumTopGeometry, podiumGlassMaterial);
+        podiumTop.position.set(0, 0.825, -0.25);
+        podiumTop.rotation.x = -Math.PI / 6;
+        podiumTop.castShadow = true;
+        podiumTop.receiveShadow = true;
+        podiumGroup.add(podiumTop);
+
+        podiumGroup.position.set(0, 0, -6);
+        scene.add(podiumGroup);
+        console.log("Modern podium added");
+
+        // Add three 3D objects with shaders in front of podium
+        const waveVertexShader = `
+            uniform float uTime;
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                vec3 pos = position;
+                pos.z += sin(pos.x * 5.0 + uTime) * 0.2;
+                pos.z += cos(pos.y * 5.0 + uTime) * 0.2;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            }
+        `;
+        const waveFragmentShader = `
+            varying vec2 vUv;
+            void main() {
+                vec3 color = mix(vec3(0.2, 0.5, 1.0), vec3(0.8, 0.9, 1.0), vUv.y);
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+        const waveUniforms = {
+            uTime: { value: 0.0 }
+        };
+        const waveMaterial = new THREE.ShaderMaterial({
+            uniforms: waveUniforms,
+            vertexShader: waveVertexShader,
+            fragmentShader: waveFragmentShader
+        });
+        const sphereGeometry = new THREE.SphereGeometry(0.3, 32, 32);
+        const sphere = new THREE.Mesh(sphereGeometry, waveMaterial);
+        sphere.position.set(-1.5, 1.0, -4);
+        sphere.castShadow = true;
+        sphere.receiveShadow = true;
+        scene.add(sphere);
+        console.log("Sphere with wave shader added");
+
+        const blinkVertexShader = `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+        const blinkFragmentShader = `
+            uniform float uTime;
+            varying vec2 vUv;
+            void main() {
+                float brightness = abs(sin(uTime));
+                vec3 color = vec3(1.0, 0.3, 0.3) * brightness;
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+        const blinkUniforms = {
+            uTime: { value: 0.0 }
+        };
+        const blinkMaterial = new THREE.ShaderMaterial({
+            uniforms: blinkUniforms,
+            vertexShader: blinkVertexShader,
+            fragmentShader: blinkFragmentShader
+        });
+        const boxGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const box = new THREE.Mesh(boxGeometry, blinkMaterial);
+        box.position.set(0, 1.0, -4);
+        box.castShadow = true;
+        box.receiveShadow = true;
+        scene.add(box);
+        console.log("Box with blink shader added");
+
+        const stripeVertexShader = `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+        const stripeFragmentShader = `
+            varying vec2 vUv;
+            void main() {
+                float stripe = mod(vUv.x * 10.0, 1.0);
+                vec3 color = stripe < 0.5 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 1.0, 0.0);
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+        const stripeMaterial = new THREE.ShaderMaterial({
+            vertexShader: stripeVertexShader,
+            fragmentShader: stripeFragmentShader
+        });
+        const cylinderGeometry = new THREE.CylinderGeometry(0.25, 0.25, 0.5, 32);
+        const cylinder = new THREE.Mesh(cylinderGeometry, stripeMaterial);
+        cylinder.position.set(1.5, 1.0, -4);
+        cylinder.castShadow = true;
+        cylinder.receiveShadow = true;
+        scene.add(cylinder);
+        console.log("Cylinder with stripe shader added");
+
+        // Add ceiling lights
+        const ceilingLightGeometry = new THREE.BoxGeometry(4, 0.2, 0.5);
+        const ceilingLightMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xFFFFFF,
+            emissive: 0xFFFFFF, 
+            emissiveIntensity: 0.3
+        });
+        for (let row = 0; row < 3; row++) {
+            for (let col = 0; col < 3; col++) {
+                const ceilingLight = new THREE.Mesh(ceilingLightGeometry, ceilingLightMaterial);
+                ceilingLight.position.set(-6 + col * 6, roomHeight - 0.05, -6 + row * 6);
+                scene.add(ceilingLight);
+
+                const ceilingPointLight = new THREE.PointLight(0xFFFFFF, 0.4, 15, 2);
+                ceilingPointLight.position.set(-6 + col * 6, roomHeight - 0.1, -6 + row * 6);
+                scene.add(ceilingPointLight);
+            }
+        }
+        console.log("Ceiling lights with point lights added");
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+        console.log("Ambient light added, intensity:", ambientLight.intensity);
+
+        const directionalLight = new THREE.DirectionalLight(0xFAFAFA, 0.5);
+        directionalLight.position.set(-10, 10, 0);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 50;
+        directionalLight.shadow.camera.left = -20;
+        directionalLight.shadow.camera.right = 20;
+        directionalLight.shadow.camera.top = 20;
+        directionalLight.shadow.camera.bottom = -20;
+        directionalLight.shadow.bias = -0.0001;
+        scene.add(directionalLight);
+        console.log("Directional light added, position:", directionalLight.position);
+
+        const spotLight = new THREE.SpotLight(0xFAFAFA, 0.8);
+        spotLight.position.set(0, 5, -5);
+        spotLight.castShadow = false;
+        spotLight.angle = Math.PI / 6;
+        spotLight.penumbra = 0.7;
+        spotLight.decay = 2;
+        spotLight.distance = 20;
+        spotLight.shadow.mapSize.width = 2048;
+        spotLight.shadow.mapSize.height = 2048;
+        spotLight.target = blackboard;
+        scene.add(spotLight);
+        console.log("Spotlight added, angle:", spotLight.angle);
+
+        const pointLight1 = new THREE.PointLight(0xFFFFFF, 0.5, 15, 2);
+        pointLight1.position.set(-2, 2, -5);
+        scene.add(pointLight1);
+        const pointLight2 = new THREE.PointLight(0xFFFFFF, 0.5, 15, 2);
+        pointLight2.position.set(2, 2, -5);
+        scene.add(pointLight2);
+        console.log("Point lights added");
+
+        // Load two animated characters
+        const loader = new THREE.GLTFLoader();
+        let mixer1, mixer2;
+
+        function normalizeModelSize(model, targetHeight) {
+            const box = new THREE.Box3().setFromObject(model);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const maxDimension = Math.max(size.x, size.y, size.z);
+            const scale = targetHeight / maxDimension;
+            model.scale.set(scale, scale, scale);
+        }
+
+        loader.load('assets/models/character1.glb', (gltf) => {
+            const character1 = gltf.scene;
+            character1.position.set(-2, 0, -6);
+            normalizeModelSize(character1, 1.8);
+            character1.castShadow = true;
+            character1.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        child.material.metalness = 0;
+                        child.material.roughness = 0.5;
+                    }
+                }
+            });
+            scene.add(character1);
+            mixer1 = new THREE.AnimationMixer(character1);
+            if (gltf.animations && gltf.animations.length > 0) {
+                const action = mixer1.clipAction(gltf.animations[0]);
+                action.play();
+                console.log("Character 1 animation playing");
+            } else {
+                console.warn("Character 1 has no animations");
+            }
+            console.log("Character 1 loaded:", character1);
+        }, (progress) => {
+            console.log("Character 1 loading progress:", progress.loaded / progress.total * 100 + "%");
+        }, (error) => {
+            console.error("Failed to load Character 1:", error);
+        });
+
+        loader.load('assets/models/character2.glb', (gltf) => {
+            const character2 = gltf.scene;
+            character2.position.set(2, 0, -6);
+            normalizeModelSize(character2, 1.8);
+            character2.castShadow = true;
+            character2.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        child.material.metalness = 0;
+                        child.material.roughness = 0.5;
+                    }
+                }
+            });
+            scene.add(character2);
+            mixer2 = new THREE.AnimationMixer(character2);
+            if (gltf.animations && gltf.animations.length > 0) {
+                const action = mixer2.clipAction(gltf.animations[0]);
+                action.play();
+                console.log("Character 2 animation playing");
+            } else {
+                console.warn("Character 2 has no animations");
+            }
+            console.log("Character 2 loaded:", character2);
+        }, (progress) => {
+            console.log("Character 2 loading progress:", progress.loaded / progress.total * 100 + "%");
+        }, (error) => {
+            console.error("Failed to load Character 2:", error);
+        });
+
+        // Add video screen on blackboard
+        const video = document.createElement('video');
+        video.src = 'assets/videos/lesson.mp4';
+        video.loop = true;
+        video.muted = true;
+        video.load();
+        video.addEventListener('loadeddata', () => {
+            video.play().then(() => {
+                console.log("Video playing successfully");
+            }).catch((error) => {
+                console.error("Failed to play video:", error);
+                const placeholderGeometry = new THREE.PlaneGeometry(6, 3);
+                const placeholderMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+                const placeholder = new THREE.Mesh(placeholderGeometry, placeholderMaterial);
+                placeholder.position.set(0, 3.5, -roomDepth / 2 + 0.4);
+                scene.add(placeholder);
+                console.log("Video failed to load, added placeholder plane");
+            });
+        }, (error) => {
+            console.error("Failed to load video:", error);
+        });
+        const videoTexture = new THREE.VideoTexture(video);
+        const screenGeometry = new THREE.PlaneGeometry(6, 3);
+        const screenMaterial = new THREE.MeshBasicMaterial({ map: videoTexture });
+        const screen = new THREE.Mesh(screenGeometry, screenMaterial);
+        screen.position.set(0, 3.5, -roomDepth / 2 + 0.4);
+        scene.add(screen);
+        console.log("Video screen added, position:", screen.position);
+
+        // Add spatial audio
+        const listener = new THREE.AudioListener();
+        camera.add(listener);
+        const sound = new THREE.PositionalAudio(listener);
+        const audioLoader = new THREE.AudioLoader();
+        audioLoader.load('assets/audio/background.wav', (buffer) => {
+            sound.setBuffer(buffer);
+            sound.setRefDistance(20);
+            sound.setLoop(true);
+            sound.setVolume(0.5);
+            console.log("Spatial audio loaded successfully");
+        }, (progress) => {
+            console.log("Audio loading progress:", progress.loaded / progress.total * 100 + "%");
+        }, (error) => {
+            console.error("Failed to load audio:", error);
+        });
+        screen.add(sound);
+        console.log("Spatial audio attached to screen");
+
+        // Bind audio playback to user interaction
+        const playButton = document.getElementById('playButton');
+        playButton.addEventListener('click', () => {
+            sound.play();
+            console.log("User clicked, audio started playing");
+        });
+
+        // Add reset view button
+        const resetButton = document.getElementById('resetButton');
+        resetButton.addEventListener('click', () => {
+            camera.position.set(0, 10, 10);
+            controls.target.set(0, 2, 0);
+            controls.update();
+            console.log("View reset");
+        });
+
+        // Add dat.GUI controls
+        const gui = new dat.GUI();
+        const guiControls = {
+            lightIntensity: 0.5,
+            volume: 0.5
+        };
+        gui.add(guiControls, 'lightIntensity', 0, 1).name("Light Intensity").onChange((value) => {
+            directionalLight.intensity = value;
+            console.log("Light intensity adjusted to:", value);
+        });
+        gui.add(guiControls, 'volume', 0, 1).name("Audio Volume").onChange((value) => {
+            sound.setVolume(value);
+            console.log("Volume adjusted to:", value);
+        });
+        console.log("dat.GUI controls added");
+
+        // Set camera position
+        camera.position.set(0, 10, 10);
+        controls.target.set(0, 2, 0);
+        console.log("Camera position set:", camera.position);
+
+        // Animation loop
+        const clock = new THREE.Clock();
+        function animate() {
+            const delta = clock.getDelta();
+
+            // Update animations
+            if (mixer1) mixer1.update(delta);
+            if (mixer2) mixer2.update(delta);
+
+            // Update shader time
+            waveUniforms.uTime.value += delta;
+            blinkUniforms.uTime.value += delta;
+
+            // Update controls
+            controls.update();
+
+            // Render the scene
+            renderer.render(scene, camera);
+
+            // Update stats
+            stats.update();
+        }
+
+        // Use setAnimationLoop for VR compatibility
+        renderer.setAnimationLoop(animate);
+
+        console.log("VR functionality enabled");
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            console.log("Window resized, new dimensions:", window.innerWidth, window.innerHeight);
+        });
+
+        // Add custom VR button
+        function addCustomVRButton() {
+            const button = document.createElement('button');
+            button.style.position = 'absolute';
+            button.style.bottom = '20px';
+            button.style.padding = '12px 24px';
+            button.style.border = '1px solid #fff';
+            button.style.borderRadius = '4px';
+            button.style.background = 'rgba(0,0,0,0.6)';
+            button.style.color = '#fff';
+            button.style.font = 'normal 13px sans-serif';
+            button.style.textAlign = 'center';
+            button.style.left = 'calc(50% - 50px)';
+            button.style.width = '100px';
+            button.style.cursor = 'pointer';
+            button.textContent = 'ENTER VR';
+            
+            button.onclick = function() {
+                if (navigator.xr) {
+                    console.log("Attempting to enter VR mode");
+                    navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+                        if (supported) {
+                            console.log("VR session supported, requesting...");
+                            navigator.xr.requestSession('immersive-vr', { 
+                                optionalFeatures: ['local-floor', 'bounded-floor'] 
+                            }).then(session => {
+                                console.log("VR session started");
+                                renderer.xr.setSession(session);
+                            }).catch(err => {
+                                console.error("VR session request failed:", err);
+                            });
+                        } else {
+                            console.log("Browser doesn't support VR sessions");
+                            alert("Your browser doesn't support VR sessions");
+                        }
+                    });
+                } else {
+                    console.log("WebXR not available");
+                    alert("Your browser doesn't support WebXR");
+                }
+            };
+            
+            document.body.appendChild(button);
+        }
+
+        // Call this function to add custom VR button
+        addCustomVRButton();
+
+        // Physics engine initialization functionngine initialization function
+        function initPhysics() {
+            // Initialize physics worldize the physics world
+            const world = new CANNON.World();
+            world.gravity.set(0, -9.82, 0);
+            world.broadphase = new CANNON.NaiveBroadphase();
+            world.solver.iterations = 10;
+            
+            // Ground physics bodyd physics body
+            const groundShape = new CANNON.Plane();
+            const groundBody = new CANNON.Body({ mass: 0 });
+            groundBody.addShape(groundShape);
+            groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI/2);
+            world.addBody(groundBody);
+            
+            // Create interactive physics objectsteractive physics objects
+            const physicsObjects = [];
+            const objectColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff];
+            
+            // Create physics objects in the middle of the first row of desks and chairscts in the middle of the first row of desks and chairs
+            for (let i = 0; i < 5; i++) {
+                const size = 0.3; // Increase size to make the balls more noticeableze to make the balls more noticeable
+                // Adjust position: in front of the first row of seats, evenly distributed front of the first row of seats, evenly distributed
+                const position = new THREE.Vector3(-4 + i * 2, 1.2, -0.5);
+                
+                // Create Three.js visual object visual object
+                const geometry = [
+                    new THREE.BoxGeometry(size, size, size),
+                    new THREE.SphereGeometry(size/2, 16, 16),
+                    new THREE.CylinderGeometry(size/2, size/2, size, 16)
+                ][i % 3];
+                
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: objectColors[i],
+                    metalness: 0.3,
+                    roughness: 0.4,
+                    emissive: objectColors[i],
+                    emissiveIntensity: 0.1
+                });
+                
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                mesh.position.copy(position);
+                scene.add(mesh);
+                
+                // Create corresponding physics bodyorresponding physics body
+                let shape;
+                if (geometry.type === "BoxGeometry") {
+                    shape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2));
+                } else if (geometry.type === "SphereGeometry") {
+                    shape = new CANNON.Sphere(size/2);
+                } else {
+                    shape = new CANNON.Cylinder(size/2, size/2, size, 8);
+                }
+                
+                const body = new CANNON.Body({ 
+                    mass: 1,
+                    shape: shape,
+                    position: new CANNON.Vec3(position.x, position.y, position.z),
+                    linearDamping: 0.3,
+                    angularDamping: 0.3
+                });
+                
+                world.addBody(body);
+                physicsObjects.push({
+                    mesh: mesh,
+                    body: body,
+                    grabbed: false
+                });
+            }
+            
+            return { world, physicsObjects };
+        }
+
+        // Create controller objectscontroller objects
+        const controller1 = renderer.xr.getController(0);
+        scene.add(controller1);
+        const controller2 = renderer.xr.getController(1);
+        scene.add(controller2);
+
+        // Initialize physics world and objects - now that the function is defined, it can be called correctly and objects - now that the function is defined, it can be called correctly
+        const physics = initPhysics();
+        const world = physics.world;
+        const physicsObjects = physics.physicsObjects;
+
+        // WebXR controller interaction systemller interaction system
+        function setupVRControllers() {
+            // For controller raycastingoller raycasting
+            const raycaster = new THREE.Raycaster();
+            const tempMatrix = new THREE.Matrix4();
+            
+            // Enhanced controller ray visualizationontroller ray visualization
+            function createControllerRay() {
+                const group = new THREE.Group();
+                
+                // Main rayn ray
+                const rayGeometry = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0, 0, -5)
+                ]);
+                const rayMaterial = new THREE.LineBasicMaterial({
+                    color: 0x00ffff,
+                    transparent: true,
+                    opacity: 0.7
+                });
+                const ray = new THREE.Line(rayGeometry, rayMaterial);
+                group.add(ray);
+                
+                // Ray endpoint indicatorpoint indicator
+                const rayEndGeometry = new THREE.SphereGeometry(0.02, 8, 8);
+                const rayEndMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffffff
+                });
+                const rayEnd = new THREE.Mesh(rayEndGeometry, rayEndMaterial);
+                rayEnd.position.z = -5;
+                group.add(rayEnd);
+                
+                return group;
+            }
+            
+            // Add advanced rays to controllersed rays to controllers
+            controller1.add(createControllerRay());
+            controller2.add(createControllerRay());
+            
+            // Handle controller interaction with physics objectsller interaction with physics objects
+            function onSelectStart(event) {
+                const controller = event.target;
+                
+                tempMatrix.identity().extractRotation(controller.matrixWorld);
+                raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+                raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+                
+                // Raycast intersection with physics objectstion detection with physics objects
+                const intersects = raycaster.intersectObjects(
+                    physicsObjects.map(obj => obj.mesh)
+                );
+                
+                if (intersects.length > 0) {
+                    const object = intersects[0].object;
+                    const physicsObj = physicsObjects.find(obj => obj.mesh === object);
+                    
+                    if (physicsObj) {
+                        physicsObj.grabbed = controller;
+                        physicsObj.body.mass = 0; // Make the object unaffected by gravityct unaffected by gravity
+                        physicsObj.body.updateMassProperties();
+                        
+                        // Haptic feedbackic feedback
+                        if (controller.gamepad && controller.gamepad.hapticActuators) {
+                            controller.gamepad.hapticActuators[0].pulse(0.7, 100);
+                        }
+                        
+                        // Set highlight effectghlight effect
+                        object.material.emissiveIntensity = 0.5;
+                    }
+                }
+            }
+            
+            function onSelectEnd(event) {
+                const controller = event.target;
+                
+                // Release grabbed objectgrabbed object
+                physicsObjects.forEach(physicsObj => {
+                    if (physicsObj.grabbed === controller) {
+                        physicsObj.grabbed = null;
+                        physicsObj.body.mass = 1; // Restore normal gravitye normal gravity
+                        physicsObj.body.updateMassProperties();
+                        
+                        // Apply controller velocityntroller velocity
+                        if (controller.userData.velocity) {
+                            const velocity = controller.userData.velocity;
+                            physicsObj.body.velocity.set(
+                                velocity.x * 3,
+                                velocity.y * 3,
+                                velocity.z * 3
+                            );
+                        }
+                        
+                        // Restore original appearancee original appearance
+                        physicsObj.mesh.material.emissiveIntensity = 0.1;
+                    }
+                });
+            }
+            
+            // Bind controller eventsntroller events
+            controller1.addEventListener('selectstart', onSelectStart);
+            controller1.addEventListener('selectend', onSelectEnd);
+            controller2.addEventListener('selectstart', onSelectStart);
+            controller2.addEventListener('selectend', onSelectEnd);
+            
+            // Track controller velocityontroller velocity
+            controller1.userData.prevPosition = new THREE.Vector3();
+            controller1.userData.velocity = new THREE.Vector3();
+            controller2.userData.prevPosition = new THREE.Vector3();
+            controller2.userData.velocity = new THREE.Vector3();
+            
+            // Update controller state functionntroller state function
+            function updateControllers(delta) {
+                // Update controller velocitycontroller velocity
+                if (controller1.visible) {
+                    const position = new THREE.Vector3().setFromMatrixPosition(controller1.matrixWorld);
+                    controller1.userData.velocity.subVectors(position, controller1.userData.prevPosition).divideScalar(delta);
+                    controller1.userData.prevPosition.copy(position);
+                }
+                
+                if (controller2.visible) {
+                    const position = new THREE.Vector3().setFromMatrixPosition(controller2.matrixWorld);
+                    controller2.userData.velocity.subVectors(position, controller2.userData.prevPosition).divideScalar(delta);
+                    controller2.userData.prevPosition.copy(position);
+                }
+                
+                // Update position of grabbed objectsition of grabbed objects
+                physicsObjects.forEach(physicsObj => {
+                    if (physicsObj.grabbed) {
+                        // Get controller positiontroller position
+                        const controllerPos = new THREE.Vector3().setFromMatrixPosition(physicsObj.grabbed.matrixWorld);
+                        const offset = new THREE.Vector3(0, 0, -0.1); // Slight offsetht offset
+                        
+                        // Apply offset to controller matrixt to controller matrix
+                        tempMatrix.identity().extractRotation(physicsObj.grabbed.matrixWorld);
+                        offset.applyMatrix4(tempMatrix);
+                        
+                        // Calculate final positionate final position
+                        const targetPosition = controllerPos.add(offset);
+                        
+                        // Update mesh and physics bodyesh and physics body
+                        physicsObj.mesh.position.copy(targetPosition);
+                        physicsObj.mesh.quaternion.copy(physicsObj.grabbed.quaternion);
+                        physicsObj.body.position.copy(targetPosition);
+                        physicsObj.body.quaternion.copy(physicsObj.grabbed.quaternion);
+                    }
+                });
+            }
+            
+            return { updateControllers };
+        }
+        
+        const vrControllers = setupVRControllers();
+
+        // Create controller models - use try-catch to handle potential errorsse try-catch to handle potential errors
+        try {
+            const controllerModelFactory = new THREE.XRControllerModelFactory();
+            
+            const controllerGrip1 = renderer.xr.getControllerGrip(0);
+            if (controllerModelFactory.createControllerModel) {
+                controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+            }
+            scene.add(controllerGrip1);
+
+            const controllerGrip2 = renderer.xr.getControllerGrip(1);
+            if (controllerModelFactory.createControllerModel) {
+                controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+            }
+            scene.add(controllerGrip2);
+
+            console.log("VR controller models loaded successfully");
+        } catch (error) {
+            console.error("Error loading VR controller models:", error);
+            // Add simple controller models as fallbacktroller models as fallback
+            const controllerGeometry = new THREE.CylinderGeometry(0.025, 0.05, 0.1, 16);
+            const controllerMaterial = new THREE.MeshStandardMaterial({
+                color: 0x444444,
+                roughness: 0.3,
+                metalness: 0.8
+            });
+            
+            const controllerGrip1 = renderer.xr.getControllerGrip(0);
+            const controllerMesh1 = new THREE.Mesh(controllerGeometry, controllerMaterial);
+            controllerGrip1.add(controllerMesh1);
+            scene.add(controllerGrip1);
+            
+            const controllerGrip2 = renderer.xr.getControllerGrip(1);
+            const controllerMesh2 = new THREE.Mesh(controllerGeometry, controllerMaterial);
+            controllerGrip2.add(controllerMesh2);
+            scene.add(controllerGrip2);
+
+            console.log("Fallback controller models created");
+        }
+
+        // Add ray indicators indicators
+        const geometry = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0, -1)
+        ]);
+        const line = new THREE.Line(geometry);
+        line.scale.z = 5;
+        controller1.add(line.clone());
+        controller2.add(line.clone());
+
+        // Modify animation loop functionnimation loop function
+        function animate() {
+            const delta = clock.getDelta();
+            
+            // Update character animations character animations
+            if (mixer1) mixer1.update(delta);
+            if (mixer2) mixer2.update(delta);
+            
+            // Update physics world - ensure world is definedd - ensure world is defined
+            if (world) {
+                world.step(1/60, delta, 3);
+                
+                // Update visual position of physics objectsal position of physics objects
+                if (physicsObjects) {
+                    physicsObjects.forEach(obj => {
+                        if (!obj.grabbed) {
+                            obj.mesh.position.copy(obj.body.position);
+                            obj.mesh.quaternion.copy(obj.body.quaternion);
+                        }
+                    });
+                }
+            }
+            
+            // Update VR controllersVR controllers
+            if (renderer.xr.isPresenting && vrControllers && vrControllers.updateControllers) {
+                vrControllers.updateControllers(delta);
+            }
+            
+            // Update shader timeshader time
+            waveUniforms.uTime.value += delta;
+            blinkUniforms.uTime.value += delta;
+            
+            // Update camera controlscamera controls
+            controls.update();
+            
+            // Render sceneer scene
+            renderer.render(scene, camera);
+            
+            // Update performance stats performance stats
+            stats.update();
+        }
+
+        // Use setAnimationLoop instead of requestAnimationFrame to support VRonFrame to support VR
+        renderer.setAnimationLoop(animate);
+    </script>
+</body>
+</html>
