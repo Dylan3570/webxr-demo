@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <title>Virtual Classroom - Three.js Assignment</title>
     <style>
-        body { margin: 0; overflow: hidden; }
+        body { margin: 0; overflow: hidden; background: #000; }
         canvas { display: block; }
         #playButton, #resetButton {
             position: absolute;
@@ -20,17 +20,83 @@
             color: white;
             background: #2A2A2A;
             transition: background 0.3s;
+            z-index: 200;
         }
-        #playButton { top: 60px; }
-        #resetButton { top: 100px; }
+        #playButton { top: 10px; }
+        #resetButton { top: 50px; }
         #playButton:hover, #resetButton:hover { background: #1976D2; }
         #playButton:active, #resetButton:active { background: #0D47A1; }
+
+        /* Settings gear button */
+        #settingsToggle {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(42, 42, 42, 0.85);
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s, transform 0.3s;
+            z-index: 200;
+            padding: 0;
+        }
+        #settingsToggle:hover { background: #1976D2; }
+        #settingsToggle.open { transform: rotate(90deg); }
+        #settingsToggle svg { width: 22px; height: 22px; fill: #fff; }
+
+        /* Settings panel */
+        #settingsPanel {
+            position: absolute;
+            top: 58px;
+            right: 10px;
+            width: 260px;
+            background: rgba(25, 25, 25, 0.92);
+            border-radius: 6px;
+            padding: 10px;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+            color: #eee;
+            z-index: 199;
+            display: none;
+        }
+        #settingsPanel.open { display: block; }
+        #settingsPanel h4 {
+            margin: 4px 0 8px 2px;
+            font-size: 11px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #9aa;
+        }
+        /* Host containers for stats.js and dat.GUI */
+        #statsHost { position: relative; height: 48px; overflow: hidden; margin-bottom: 8px; }
+        #statsHost canvas { border-radius: 4px; }
+        #guiHost .dg.main { margin: 0; float: none; }
+        #guiHost .dg.main .close-button { display: none; }
+        #guiHost .dg.ac { position: static; }
     </style>
 </head>
 <body>
     <!-- Name: Wang Guanheng  Student ID: 124100726 -->
     <button id="playButton">Play Audio</button>
     <button id="resetButton">Reset View</button>
+
+    <button id="settingsToggle" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.07 7.07 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.03 7.03 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.58.24-1.12.56-1.62.94l-2.39-.96a.5.5 0 00-.6.22L2.67 8.84a.5.5 0 00.12.64l2.03 1.58a7.07 7.07 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32c.12.21.37.3.6.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.58-.24 1.12-.56 1.62-.94l2.39.96c.23.08.48-.01.6-.22l1.92-3.32a.5.5 0 00-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>
+    </button>
+
+    <div id="settingsPanel">
+        <h4>Performance</h4>
+        <div id="statsHost"></div>
+        <h4>Controls</h4>
+        <div id="guiHost"></div>
+    </div>
     <script src="libs/three.min.js"></script>
     <script src="libs/GLTFLoader.js"></script>
     <script src="libs/OrbitControls.js"></script>
@@ -39,7 +105,6 @@
     <script src="libs/VRButton.js"></script> 
     <script src="libs/XRControllerModelFactory.js"></script>
     
-    <!-- Make sure Cannon.js is loaded correctly -->ing of Cannon.js -->
     <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
 
     <script>
@@ -56,8 +121,9 @@
         // Enable WebXR in the renderer
         renderer.xr.enabled = true;
 
-        // Add the VR button to the document
-        document.body.appendChild(VRButton.createButton(renderer)); // Using non-modular VRButton
+        // Note: the built-in VRButton is not used; a custom ENTER VR button is
+        // added further below (addCustomVRButton), which avoids the persistent
+        // "VR NOT SUPPORTED" label on non-VR browsers.
 
         // Add OrbitControls
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -71,7 +137,10 @@
 
         // Add performance monitor
         const stats = new Stats();
-        document.body.appendChild(stats.dom);
+        stats.dom.style.position = 'relative';
+        stats.dom.style.top = '0';
+        stats.dom.style.left = '0';
+        document.getElementById('statsHost').appendChild(stats.dom);
         console.log("Stats.js initialized");
 
         // Set scene background to black
@@ -744,11 +813,18 @@
         screen.add(sound);
         console.log("Spatial audio attached to screen");
 
-        // Bind audio playback to user interaction
+        // Bind audio playback to user interaction (toggle)
         const playButton = document.getElementById('playButton');
         playButton.addEventListener('click', () => {
-            sound.play();
-            console.log("User clicked, audio started playing");
+            if (sound.isPlaying) {
+                sound.pause();
+                playButton.textContent = 'Play Audio';
+                console.log("User clicked, audio paused");
+            } else {
+                sound.play();
+                playButton.textContent = 'Pause Audio';
+                console.log("User clicked, audio started playing");
+            }
         });
 
         // Add reset view button
@@ -760,8 +836,9 @@
             console.log("View reset");
         });
 
-        // Add dat.GUI controls
-        const gui = new dat.GUI();
+        // Add dat.GUI controls (mounted inside the settings panel)
+        const gui = new dat.GUI({ autoPlace: false, width: 240 });
+        document.getElementById('guiHost').appendChild(gui.domElement);
         const guiControls = {
             lightIntensity: 0.5,
             volume: 0.5
@@ -775,6 +852,14 @@
             console.log("Volume adjusted to:", value);
         });
         console.log("dat.GUI controls added");
+
+        // Settings panel toggle
+        const settingsToggle = document.getElementById('settingsToggle');
+        const settingsPanel = document.getElementById('settingsPanel');
+        settingsToggle.addEventListener('click', () => {
+            const isOpen = settingsPanel.classList.toggle('open');
+            settingsToggle.classList.toggle('open', isOpen);
+        });
 
         // Set camera position
         camera.position.set(0, 10, 10);
