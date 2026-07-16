@@ -950,6 +950,28 @@
         // Call this function to add custom VR button
         addCustomVRButton();
 
+        // Restore the desktop view when the VR session ends.
+        // During an XR session the renderer drives the camera's matrix directly,
+        // so on exit the camera is left wherever the headset last was and
+        // OrbitControls' target no longer matches. Reset both, and restore the
+        // renderer size, which the XR session also overrides.
+        renderer.xr.addEventListener('sessionend', () => {
+            camera.position.set(0, 10, 10);
+            camera.rotation.set(0, 0, 0);
+            camera.quaternion.identity();
+            camera.matrixAutoUpdate = true;
+            camera.updateProjectionMatrix();
+
+            controls.target.set(0, 2, 0);
+            controls.update();
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            console.log("VR session ended, desktop view restored");
+        });
+
         // Physics engine initialization functionngine initialization function
         function initPhysics() {
             // Initialize physics worldize the physics world
