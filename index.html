@@ -39,7 +39,7 @@
     <script src="libs/VRButton.js"></script> 
     <script src="libs/XRControllerModelFactory.js"></script>
     
-    <!-- Make sure Cannon.js is loaded correctly -->
+    <!-- Make sure Cannon.js is loaded correctly -->ing of Cannon.js -->
     <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
 
     <script>
@@ -56,7 +56,8 @@
         // Enable WebXR in the renderer
         renderer.xr.enabled = true;
 
-        // VR button is added by addCustomVRButton() below - default VRButton omitted to avoid duplicates
+        // Add the VR button to the document
+        document.body.appendChild(VRButton.createButton(renderer)); // Using non-modular VRButton
 
         // Add OrbitControls
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -828,54 +829,36 @@
             button.style.color = '#fff';
             button.style.font = 'normal 13px sans-serif';
             button.style.textAlign = 'center';
-            button.style.left = 'calc(50% - 70px)';
-            button.style.width = '140px';
+            button.style.left = 'calc(50% - 50px)';
+            button.style.width = '100px';
             button.style.cursor = 'pointer';
-            button.textContent = 'CHECKING VR...';
-
-            function setUnavailable(text) {
-                button.textContent = text;
-                button.style.cursor = 'not-allowed';
-                button.style.opacity = '0.45';
-                button.disabled = true;
-                button.title = 'A WebXR-compatible headset is required. The scene is fully explorable with mouse and keyboard.';
-            }
-
-            function enableVR() {
-                button.textContent = 'ENTER VR';
-                button.title = 'Enter immersive VR';
-                button.onclick = function () {
-                    console.log("Requesting VR session...");
-                    navigator.xr.requestSession('immersive-vr', {
-                        optionalFeatures: ['local-floor', 'bounded-floor']
-                    }).then(session => {
-                        console.log("VR session started");
-                        renderer.xr.setSession(session);
-                    }).catch(err => {
-                        console.error("VR session request failed:", err);
-                        setUnavailable('VR UNAVAILABLE');
+            button.textContent = 'ENTER VR';
+            
+            button.onclick = function() {
+                if (navigator.xr) {
+                    console.log("Attempting to enter VR mode");
+                    navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+                        if (supported) {
+                            console.log("VR session supported, requesting...");
+                            navigator.xr.requestSession('immersive-vr', { 
+                                optionalFeatures: ['local-floor', 'bounded-floor'] 
+                            }).then(session => {
+                                console.log("VR session started");
+                                renderer.xr.setSession(session);
+                            }).catch(err => {
+                                console.error("VR session request failed:", err);
+                            });
+                        } else {
+                            console.log("Browser doesn't support VR sessions");
+                            alert("Your browser doesn't support VR sessions");
+                        }
                     });
-                };
-            }
-
-            if (!navigator.xr) {
-                console.log("WebXR not available in this browser");
-                setUnavailable('NO VR HEADSET');
-            } else {
-                navigator.xr.isSessionSupported('immersive-vr').then(supported => {
-                    if (supported) {
-                        console.log("VR session supported");
-                        enableVR();
-                    } else {
-                        console.log("No VR headset detected");
-                        setUnavailable('NO VR HEADSET');
-                    }
-                }).catch(err => {
-                    console.error("VR support check failed:", err);
-                    setUnavailable('NO VR HEADSET');
-                });
-            }
-
+                } else {
+                    console.log("WebXR not available");
+                    alert("Your browser doesn't support WebXR");
+                }
+            };
+            
             document.body.appendChild(button);
         }
 
